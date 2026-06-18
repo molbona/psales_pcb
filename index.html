@@ -1,0 +1,869 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PCB Weekly Dashboard | Traffic Light Intelligence</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+KR:wght@400;500;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <style>
+    :root {
+      --bg: #f5f7fb;
+      --panel: rgba(255,255,255,.94);
+      --line: rgba(15,23,42,.14);
+      --muted: #475569;
+      --blue: #38bdf8;
+      --green: #22c55e;
+      --yellow: #facc15;
+      --red: #ef4444;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Inter", "Noto Sans KR", sans-serif;
+      background:
+        radial-gradient(circle at 15% 0%, rgba(56,189,248,.18), transparent 34%),
+        radial-gradient(circle at 85% 14%, rgba(34,197,94,.14), transparent 30%),
+        linear-gradient(135deg, #f8fafc 0%, #eef4fb 48%, #ffffff 100%);
+      color: #0f172a;
+      min-height: 100vh;
+    }
+    .mono { font-family: "JetBrains Mono", monospace; }
+    .grid-bg {
+      background-image:
+        linear-gradient(rgba(15,23,42,.045) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(15,23,42,.045) 1px, transparent 1px);
+      background-size: 32px 32px;
+    }
+    .glass {
+      background: linear-gradient(145deg, rgba(255,255,255,.96), rgba(248,250,252,.9));
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: 0 18px 46px rgba(15,23,42,.12);
+    }
+    .status-bar { height: 3px; border-radius: 8px 8px 0 0; }
+    .status-blue { background: linear-gradient(90deg, #38bdf8, #22c55e); }
+    .status-yellow { background: linear-gradient(90deg, #fde047, #f59e0b); }
+    .status-red { background: linear-gradient(90deg, #fb7185, #ef4444); }
+    .traffic {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 5px 10px;
+      border-radius: 999px;
+      font: 700 11px "JetBrains Mono", monospace;
+      white-space: nowrap;
+    }
+    .traffic::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      box-shadow: 0 0 12px currentColor;
+      animation: pulse 1.8s ease-in-out infinite;
+    }
+    .traffic.blue  { color: #075985; border: 1px solid rgba(56,189,248,.44);  background: rgba(56,189,248,.18); }
+    .traffic.blue::before  { background: #38bdf8; }
+    .traffic.yellow { color: #713f12; border: 1px solid rgba(250,204,21,.5); background: rgba(250,204,21,.22); }
+    .traffic.yellow::before { background: #facc15; }
+    .traffic.red   { color: #7f1d1d; border: 1px solid rgba(239,68,68,.46);  background: rgba(239,68,68,.2); }
+    .traffic.red::before   { background: #ef4444; animation-duration: 1s; }
+    @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.64;transform:scale(1.24)} }
+    .nav-item {
+      display: flex; align-items: center; gap: 10px;
+      width: 100%; padding: 10px 12px; border-radius: 8px;
+      color: #1f2937; transition: background .18s, color .18s, border-color .18s;
+      border-left: 3px solid transparent;
+      text-align: left;
+    }
+    .nav-item.active, .nav-item:hover {
+      color: #020617;
+      background: rgba(56,189,248,.16);
+      border-left-color: #38bdf8;
+    }
+    .metric-card { position: relative; overflow: hidden; min-height: 152px; }
+    .metric-card::after {
+      content: "";
+      position: absolute;
+      inset: auto -40px -50px auto;
+      width: 140px; height: 140px;
+      border-radius: 50%;
+      background: rgba(56,189,248,.08);
+    }
+    .small-label { color: var(--muted); font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+    .value { font-size: clamp(27px, 3vw, 42px); line-height: 1; font-weight: 800; letter-spacing: 0; }
+    .muted { color: var(--muted); }
+    .table-row { border-bottom: 1px solid rgba(15,23,42,.1); }
+    .source-link { color: #0369a1; text-decoration: none; }
+    .source-link:hover { text-decoration: underline; }
+    .progress-track { height: 8px; border-radius: 999px; background: rgba(15,23,42,.12); overflow: hidden; }
+    .progress-fill { height: 100%; border-radius: 999px; background: linear-gradient(90deg, #38bdf8, #22c55e); }
+    canvas { max-height: 280px; }
+    .period-control input {
+      width: 122px;
+      border: 1px solid rgba(15,23,42,.18);
+      border-radius: 8px;
+      background: rgba(255,255,255,.86);
+      color: #0f172a;
+      padding: 7px 9px;
+      font: 700 12px "JetBrains Mono", monospace;
+    }
+    .period-control button {
+      border-radius: 8px;
+      background: #0f172a;
+      color: #fff;
+      padding: 8px 12px;
+      font-size: 12px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+    .period-control button:disabled { opacity: .5; cursor: not-allowed; }
+    header { background: rgba(255,255,255,.9) !important; }
+    .text-slate-300,.text-slate-400,.text-slate-500 { color: #1f2937 !important; }
+    .text-sky-300,.text-sky-200,.text-yellow-200,.text-red-300 { color: #111827 !important; }
+    .border-white\/10 { border-color: rgba(15,23,42,.14) !important; }
+    .bg-white\/5,.bg-white\/\[\.04\],.bg-white\/\[\.035\] { background-color: rgba(255,255,255,.72) !important; }
+    .notion-badge {
+      display:inline-flex; align-items:center; gap:5px;
+      padding:3px 8px; border-radius:6px;
+      background:rgba(0,0,0,.06); border:1px solid rgba(0,0,0,.12);
+      font:600 10px "JetBrains Mono",monospace; color:#374151;
+    }
+    .tab-btn {
+      padding:6px 14px; border-radius:8px; font:700 12px "Inter",sans-serif;
+      border:1px solid rgba(15,23,42,.18); cursor:pointer;
+      background:rgba(255,255,255,.7); color:#374151;
+      transition:background .15s,color .15s;
+    }
+    .tab-btn.active { background:#0f172a; color:#fff; border-color:#0f172a; }
+    /* Checklist styles */
+    .check-item { display:flex; align-items:center; gap:10px; padding:8px 12px; border-radius:8px; border:1px solid rgba(15,23,42,.1); background:rgba(255,255,255,.5); }
+    .check-item.ok { border-color:rgba(34,197,94,.35); background:rgba(34,197,94,.07); }
+    .check-item.err { border-color:rgba(239,68,68,.35); background:rgba(239,68,68,.07); }
+    .check-item.pending { border-color:rgba(250,204,21,.4); background:rgba(250,204,21,.07); }
+    .check-dot { width:10px; height:10px; border-radius:50%; flex-shrink:0; }
+    .check-dot.ok { background:#22c55e; }
+    .check-dot.err { background:#ef4444; box-shadow:0 0 8px rgba(239,68,68,.6); }
+    .check-dot.pending { background:#facc15; }
+  </style>
+</head>
+<body class="grid-bg">
+  <!-- ── HEADER ── -->
+  <header class="sticky top-0 z-30 border-b border-white/10 bg-[#07111f]/86 backdrop-blur">
+    <div class="mx-auto flex max-w-[1480px] flex-wrap items-center justify-between gap-4 px-5 py-4">
+      <div class="flex items-center gap-4">
+        <div class="flex h-11 w-11 items-center justify-center rounded-lg bg-sky-500/15 text-sky-300 ring-1 ring-sky-400/30">
+          <i class="fa-solid fa-circuit-board text-xl"></i>
+        </div>
+        <div>
+          <h1 class="text-xl font-extrabold tracking-normal">PCB Weekly Command Center</h1>
+          <p class="mono text-xs text-slate-400">Traffic-Light Intelligence · Tableau REST Sync</p>
+        </div>
+      </div>
+      <div class="hidden items-center gap-2 md:flex">
+        <span class="traffic blue">파랑 정상</span>
+        <span class="traffic yellow">노랑 주의</span>
+        <span class="traffic red">빨강 경고</span>
+      </div>
+      <div class="flex flex-wrap items-center justify-end gap-3 text-sm">
+        <div class="period-control flex items-center gap-2 rounded-lg border border-white/10 bg-white/[.04] px-3 py-2">
+          <label for="periodStart" class="small-label">기간</label>
+          <input id="periodStart" type="date" min="2024-01-01" max="2027-12-31" value="2026-01-01" />
+          <span class="muted">~</span>
+          <input id="periodEnd" type="date" min="2024-01-01" max="2027-12-31" value="2026-06-30" />
+          <button id="periodApply" type="button">적용</button>
+        </div>
+        <div class="period-control flex items-center gap-2 rounded-lg border border-white/10 bg-white/[.04] px-3 py-2">
+          <label class="small-label">Tableau</label>
+          <input id="tableauUser" type="text" autocomplete="username" placeholder="ID" />
+          <input id="tableauPassword" type="password" autocomplete="current-password" placeholder="Password" />
+          <button id="tableauConnect" type="button">연결</button>
+        </div>
+        <span class="traffic blue">LIVE</span>
+        <span id="clock" class="mono text-slate-300">--:--</span>
+      </div>
+    </div>
+  </header>
+
+  <div class="mx-auto grid max-w-[1480px] grid-cols-1 gap-5 px-5 py-5 lg:grid-cols-[250px_1fr]">
+    <!-- ── SIDEBAR ── -->
+    <aside class="glass p-4 lg:sticky lg:top-24 lg:h-[calc(100vh-116px)]">
+      <div class="mb-4">
+        <div class="small-label">Dashboard Menu</div>
+        <div class="mt-1 text-sm text-slate-300">PCB 주간 운영 지표</div>
+      </div>
+      <nav class="space-y-2" id="menu"></nav>
+      <div class="mt-5 rounded-lg border border-white/10 bg-white/[.035] p-3">
+        <div class="small-label">Data Sources</div>
+        <ul class="mt-2 space-y-1 text-xs leading-6 text-slate-300">
+          <li><i class="fa-solid fa-link mr-1 text-sky-400"></i> Tableau REST API</li>
+          <li><i class="fa-solid fa-file-excel mr-1 text-green-500"></i> SharePoint Excel</li>
+          <li><i class="fa-brands fa-square-js mr-1 text-yellow-400"></i> Notion Checklist</li>
+        </ul>
+      </div>
+      <!-- Overall Insight Summary -->
+      <div class="mt-4 rounded-lg border border-white/10 bg-white/[.035] p-3">
+        <div class="small-label mb-2">통합 인사이트</div>
+        <p class="text-xs leading-5 text-slate-300" id="sidebarInsight">대시보드를 로딩하는 중입니다.</p>
+      </div>
+    </aside>
+
+    <!-- ── MAIN ── -->
+    <main class="space-y-5">
+      <!-- Executive Signal -->
+      <section class="glass p-5">
+        <div class="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+          <div>
+            <div class="small-label">Executive Signal</div>
+            <h2 class="mt-2 text-3xl font-extrabold tracking-normal">PCB 통합 신호등: <span id="overallText" class="text-yellow-200">-</span></h2>
+            <p class="mt-3 max-w-4xl text-sm leading-7 text-slate-300" id="overallInsight"></p>
+            <div class="mt-4 grid max-w-3xl grid-cols-1 gap-3 sm:grid-cols-3">
+              <div class="rounded-lg border border-white/10 bg-white/[.04] px-4 py-3">
+                <div class="small-label">선택 기간</div>
+                <div id="selectedPeriodLabel" class="mono mt-1 text-lg font-extrabold">2026-01 ~ 2026-06</div>
+              </div>
+              <div class="rounded-lg border border-white/10 bg-white/[.04] px-4 py-3">
+                <div class="small-label">기간 매출</div>
+                <div id="periodAmount" class="mono mt-1 text-lg font-extrabold">-</div>
+              </div>
+              <div class="rounded-lg border border-white/10 bg-white/[.04] px-4 py-3">
+                <div class="small-label">기간 GP</div>
+                <div id="periodGp" class="mono mt-1 text-lg font-extrabold">-</div>
+              </div>
+            </div>
+          </div>
+          <div class="grid grid-cols-3 gap-3 text-center">
+            <div class="rounded-lg border border-white/10 bg-white/[.04] px-4 py-3">
+              <div class="mono text-2xl font-bold text-sky-300" id="okCount">0</div>
+              <div class="small-label">Normal</div>
+            </div>
+            <div class="rounded-lg border border-white/10 bg-white/[.04] px-4 py-3">
+              <div class="mono text-2xl font-bold text-yellow-200" id="warnCount">0</div>
+              <div class="small-label">Caution</div>
+            </div>
+            <div class="rounded-lg border border-white/10 bg-white/[.04] px-4 py-3">
+              <div class="mono text-2xl font-bold text-red-300" id="badCount">0</div>
+              <div class="small-label">Alert</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- KPI Cards (top 4) -->
+      <section class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4" id="metricCards"></section>
+
+      <!-- Charts Row 1: Billing Trend + Sales by Type -->
+      <section class="grid grid-cols-1 gap-5 xl:grid-cols-[1.15fr_.85fr]">
+        <div class="glass p-5">
+          <div class="mb-4 flex items-center justify-between">
+            <div>
+              <div class="small-label">Billing Trend</div>
+              <h3 class="mt-1 text-lg font-bold">2026 PCB 월별 매출 추이</h3>
+            </div>
+            <div class="flex gap-2">
+              <button class="tab-btn active" id="tabAll" onclick="switchChart('all',this)">전체</button>
+              <button class="tab-btn" id="tabOnline" onclick="switchChart('online',this)">온라인</button>
+              <button class="tab-btn" id="tabManual" onclick="switchChart('manual',this)">수동</button>
+            </div>
+          </div>
+          <canvas id="billingChart"></canvas>
+        </div>
+        <div class="glass p-5">
+          <div class="mb-4">
+            <div class="small-label">Sales Mix</div>
+            <h3 class="mt-1 text-lg font-bold">6월 온라인/수동 매출 비중</h3>
+          </div>
+          <canvas id="mixChart"></canvas>
+        </div>
+      </section>
+
+      <!-- Charts Row 2: Lead Time + Fulfillment -->
+      <section class="grid grid-cols-1 gap-5 xl:grid-cols-[.9fr_1.1fr]">
+        <div class="glass p-5">
+          <div class="mb-4">
+            <div class="small-label">Lead Time</div>
+            <h3 class="mt-1 text-lg font-bold">평균 납기일 (CN vs KR)</h3>
+          </div>
+          <canvas id="leadTimeChart"></canvas>
+        </div>
+        <div class="glass p-5">
+          <div class="mb-4 flex items-center justify-between">
+            <div>
+              <div class="small-label">Fulfillment Rate</div>
+              <h3 class="mt-1 text-lg font-bold">당일 견적/오더 처리율 추이</h3>
+            </div>
+            <span class="mono rounded-lg bg-white/5 px-3 py-2 text-xs text-slate-300">목표 ≥ 95%</span>
+          </div>
+          <canvas id="fulfillmentChart"></canvas>
+        </div>
+      </section>
+
+      <!-- Traffic Criteria Table -->
+      <section class="glass p-5">
+        <div class="mb-4 flex items-center justify-between">
+          <div>
+            <div class="small-label">Traffic Criteria</div>
+            <h3 class="mt-1 text-lg font-bold">리포트 분석항목 및 신호등 기준</h3>
+          </div>
+          <span class="text-xs text-slate-400">Excel PCB sheet 기준</span>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full min-w-[800px] text-left text-sm">
+            <thead class="text-xs uppercase text-slate-400">
+              <tr class="table-row">
+                <th class="py-3 pr-4">구성항목</th>
+                <th class="py-3 pr-4">현재값</th>
+                <th class="py-3 pr-4">상태</th>
+                <th class="py-3 pr-4">Goal</th>
+                <th class="py-3 pr-4">신호등 기준</th>
+                <th class="py-3 pr-4">Source</th>
+              </tr>
+            </thead>
+            <tbody id="criteriaRows"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Online Order System Check -->
+      <section class="glass p-5" id="section-check">
+        <div class="mb-4 flex items-center justify-between">
+          <div>
+            <div class="small-label">Online Order System Check</div>
+            <h3 class="mt-1 text-lg font-bold">PCB 온라인 주문 시스템 점검</h3>
+          </div>
+          <div class="flex items-center gap-3">
+            <span class="notion-badge"><i class="fa-brands fa-square-js mr-1"></i>Notion 수동체크</span>
+            <span id="checkOverallBadge" class="traffic blue">문제없음</span>
+          </div>
+        </div>
+        <p class="mb-4 text-sm text-slate-300">매일 담당자가 10개 조건으로 PCB 온라인 주문 시스템 견적 노출 여부를 점검합니다. 오류 발생 시 즉각 빨강 신호등으로 표시됩니다.</p>
+        <div class="grid grid-cols-1 gap-2 sm:grid-cols-2" id="checkList"></div>
+        <div class="mt-4 rounded-lg border border-yellow-300/30 bg-yellow-50/30 p-3 text-xs text-slate-500">
+          ※ 모든 스펙 자동 점검은 파이썬 기반 별도 개발 진행 중입니다. 현재는 Notion 수동 체크 결과를 반영합니다.
+        </div>
+      </section>
+
+      <!-- AI Insight Cards -->
+      <section class="glass p-5">
+        <div class="mb-4">
+          <div class="small-label">AI Insight</div>
+          <h3 class="mt-1 text-lg font-bold">메뉴별 분석 인사이트</h3>
+        </div>
+        <div class="grid grid-cols-1 gap-4 lg:grid-cols-2" id="insightCards"></div>
+      </section>
+
+      <!-- Integrated Insight -->
+      <section class="glass p-5">
+        <div class="mb-4">
+          <div class="small-label">Integrated Insight</div>
+          <h3 class="mt-1 text-lg font-bold">통합 인사이트 분석</h3>
+        </div>
+        <div class="grid grid-cols-1 gap-4 lg:grid-cols-3" id="integratedInsights"></div>
+      </section>
+
+      <footer class="pb-8 text-center text-xs text-slate-500">
+        PCB Weekly Command Center · Excel PCB 기준표 + Tableau REST API · last sync: 2026-06-18
+      </footer>
+    </main>
+  </div>
+
+  <script>
+    /* ── 대시보드 데이터 ── */
+    const dashboard = {
+      latestMonth: "2026-06",
+      monthlyBilling: [
+        { label: "2026-01", total: 312000000, online: 195000000, manual: 117000000, gp: 0.218 },
+        { label: "2026-02", total: 387000000, online: 241000000, manual: 146000000, gp: 0.224 },
+        { label: "2026-03", total: 421000000, online: 268000000, manual: 153000000, gp: 0.231 },
+        { label: "2026-04", total: 356000000, online: 219000000, manual: 137000000, gp: 0.219 },
+        { label: "2026-05", total: 445000000, online: 285000000, manual: 160000000, gp: 0.228 },
+        { label: "2026-06", total: 398000000, online: 252000000, manual: 146000000, gp: 0.225 }
+      ],
+      leadTimeHistory: [
+        { label: "2026-01", cn: 8.2, kr: 5.4 },
+        { label: "2026-02", cn: 9.1, kr: 5.9 },
+        { label: "2026-03", cn: 7.8, kr: 5.1 },
+        { label: "2026-04", cn: 10.3, kr: 6.2 },
+        { label: "2026-05", cn: 9.6, kr: 5.7 },
+        { label: "2026-06", cn: 8.9, kr: 5.5 }
+      ],
+      fulfillmentHistory: [
+        { label: "2026-01", quote: 0.967, order: 0.951 },
+        { label: "2026-02", quote: 0.983, order: 0.962 },
+        { label: "2026-03", quote: 0.941, order: 0.923 },
+        { label: "2026-04", quote: 0.971, order: 0.957 },
+        { label: "2026-05", quote: 0.958, order: 0.944 },
+        { label: "2026-06", quote: 0.934, order: 0.911 }
+      ],
+      onlineSystemCheck: [
+        { spec: "일반 단면 PCB (FR-4)", status: "ok" },
+        { spec: "양면 PCB (FR-4)", status: "ok" },
+        { spec: "다층 PCB 4L", status: "ok" },
+        { spec: "다층 PCB 6L", status: "ok" },
+        { spec: "알루미늄 PCB", status: "ok" },
+        { spec: "FPCB (연성기판)", status: "pending" },
+        { spec: "고주파 PCB (Rogers)", status: "ok" },
+        { spec: "반경화 PCB (Rigid-Flex)", status: "ok" },
+        { spec: "고온 PCB (Polyimide)", status: "ok" },
+        { spec: "특수 후처리 (ENIG+OSP)", status: "ok" }
+      ],
+      metrics: [
+        {
+          id: "quote",
+          title: "당일견적 처리율",
+          icon: "fa-bolt",
+          indicator: "정상/지연 구분",
+          update: "매일",
+          value: 0.934,
+          display: "93.4%",
+          goal: "95% 이상",
+          status: "yellow",
+          red: "90% 미만",
+          yellow: "90% 이상 95% 미만",
+          blue: "95% 이상",
+          source: "http://report.icbanq.com/#/views/_Tableau/PCBFulfillment?:iid=1",
+          sourceLabel: "PCB당일견적 Fulfillment",
+          insight: "6월 기준 당일견적 처리율 93.4%로 노랑(주의) 구간입니다. 견적 지연 건은 고객 지연 2건·세일즈 지연 2건·담당자 지연 3건으로 파악됩니다. 담당자 지연 3건이 전체 지연의 42.9%를 차지해 내부 프로세스 개선이 우선 과제입니다. 목표 95% 달성을 위해 지연 사유 코드 표준화와 알림 자동화가 필요합니다."
+        },
+        {
+          id: "order",
+          title: "당일 오더 처리율",
+          icon: "fa-cart-shopping",
+          indicator: "PO단순기준 정상/지연 구분",
+          update: "매일",
+          value: 0.911,
+          display: "91.1%",
+          goal: "95% 이상",
+          status: "yellow",
+          red: "90% 미만",
+          yellow: "90% 이상 95% 미만",
+          blue: "95% 이상",
+          source: "http://report.icbanq.com/#/views/_Tableau/PCBFulfillment_1?:iid=3",
+          sourceLabel: "PCB당일오더 Fulfillment",
+          insight: "6월 기준 당일 오더 처리율 91.1%입니다. 지연 건 중 여신 이슈 1건, 발주 서류 미비 2건이 있습니다. 17시 컷오프 룰 운영 중이나 예외 케이스 수동 보정 슬롯 필요합니다. 공급처 확인 지연이 반복되는 경우 사전 여신 한도 점검 자동화를 권장합니다."
+        },
+        {
+          id: "leadtime-cn",
+          title: "평균 납기 – ICB CN (중국)",
+          icon: "fa-plane-arrival",
+          indicator: "주문 후 입고 납기일",
+          update: "매일",
+          value: 8.9,
+          display: "8.9일",
+          goal: "10일 이하",
+          status: "blue",
+          red: "10일 초과",
+          yellow: "-",
+          blue: "10일 이하",
+          source: "http://report.icbanq.com/#/views/_Tableau/PCB_Graph?:iid=3",
+          sourceLabel: "PCB Lead Time CN",
+          insight: "6월 중국 공급처 평균 납기 8.9일로 파랑(정상) 구간입니다. 다만 4월 10.3일 위반 이력이 있어 특정 SPEC(고층수 다층기판) 집중 모니터링이 필요합니다. 납기 지연 가능성 SPEC에 대해 사전 재고 버퍼 전략을 검토하세요."
+        },
+        {
+          id: "leadtime-kr",
+          title: "평균 납기 – KR (국내)",
+          icon: "fa-truck-fast",
+          indicator: "주문 후 입고 납기일",
+          update: "매일",
+          value: 5.5,
+          display: "5.5일",
+          goal: "10일 이하",
+          status: "blue",
+          red: "10일 초과",
+          yellow: "-",
+          blue: "10일 이하",
+          source: "http://report.icbanq.com/#/views/_Tableau/PCB_Graph_1?:iid=3",
+          sourceLabel: "PCB Lead Time KR",
+          insight: "6월 국내 공급처 평균 납기 5.5일로 파랑(정상)이며 중국 대비 3.4일 빠릅니다. 국내 공급처 비중 확대 시 전체 납기 경쟁력 향상 가능합니다. 고주파·특수 재질 PCB는 국내 전문 공급처 발굴을 통해 납기 리스크를 낮출 수 있습니다."
+        },
+        {
+          id: "billing",
+          title: "PCB 전체 매출",
+          icon: "fa-won-sign",
+          indicator: "월 단위 Billing",
+          update: "매일",
+          value: 398000000,
+          display: "₩398M",
+          goal: "실시간 업데이트",
+          status: "blue",
+          red: "-",
+          yellow: "-",
+          blue: "업데이트 정상",
+          source: "http://report.icbanq.com/#/views/EMSDailyStatus/PCB1?:iid=1",
+          sourceLabel: "EMS Daily Status – PCB Billing",
+          insight: "6월 PCB 전체 매출 398M으로 5월(445M) 대비 -10.6% 감소했습니다. GP 22.5%는 연중 평균 수준입니다. 온라인 매출이 전체의 63.3%를 차지하며 온라인 채널 비중이 지속 상승 중입니다. 월말 수주 잔고 전환 여부를 확인하세요."
+        },
+        {
+          id: "billing-online",
+          title: "PCB 온라인 매출",
+          icon: "fa-globe",
+          indicator: "월 단위 온라인 Billing",
+          update: "매일",
+          value: 252000000,
+          display: "₩252M",
+          goal: "실시간 업데이트",
+          status: "blue",
+          red: "-",
+          yellow: "-",
+          blue: "업데이트 정상",
+          source: "http://report.icbanq.com/#/views/BOM_Traffic_New/PCBTYPE?:iid=1",
+          sourceLabel: "PCB Type – Online",
+          insight: "6월 온라인 매출 252M으로 전체 매출의 63.3%를 차지합니다. FR-4 양면·4층 기판이 온라인 매출의 약 68%를 차지하는 주력입니다. 온라인 전환율 제고를 위해 견적 응답 속도와 UX 개선이 중요합니다."
+        },
+        {
+          id: "billing-manual",
+          title: "PCB 수동 매출",
+          icon: "fa-file-invoice-dollar",
+          indicator: "월 단위 수동 Billing",
+          update: "매일",
+          value: 146000000,
+          display: "₩146M",
+          goal: "실시간 업데이트",
+          status: "blue",
+          red: "-",
+          yellow: "-",
+          blue: "업데이트 정상",
+          source: "http://report.icbanq.com/#/views/BOM_Traffic_New/PCBTYPE?:iid=1",
+          sourceLabel: "PCB Type – Manual",
+          insight: "6월 수동 매출 146M(36.7%)입니다. 수동 채널은 주로 특수 SPEC·대형 로트 수주로 단가가 높아 GP 기여도가 중요합니다. 수동 수주의 온라인 전환 가능 비율 분석을 통해 운영 효율화 기회를 탐색해야 합니다."
+        },
+        {
+          id: "sys-check",
+          title: "온라인 주문 시스템 점검",
+          icon: "fa-shield-check",
+          indicator: "10개 스펙 수동 점검",
+          update: "매일",
+          value: null,
+          display: "9/10 정상",
+          goal: "오류 없음 (Error 0)",
+          status: "yellow",
+          red: "Error 발생 시",
+          yellow: "점검 보류/미완료",
+          blue: "문제없음 (Error 0)",
+          source: "https://www.notion.so/2e94104cf6fd80cca74eec5f2a20441e",
+          sourceLabel: "Notion 점검 체크리스트",
+          insight: "FPCB(연성기판) 1건이 견적 노출 지연 상태로 확인 중입니다(점검 보류). 나머지 9개 스펙은 정상 견적 노출 확인 완료입니다. 파이썬 자동화 개발 완료 시 10개 → 전 스펙 자동 모니터링으로 확대됩니다."
+        }
+      ],
+      overallInsight: "2026년 6월 PCB 주간 대시보드 분석 결과: 매출 지표·납기 지표는 파랑(정상)이나, 당일 견적(93.4%)·오더 처리율(91.1%)이 목표(95%) 미달로 노랑(주의) 상태입니다. 온라인 주문 시스템은 FPCB 1건 점검 보류로 주의가 필요합니다. 내부 견적 지연 프로세스 개선과 FPCB 견적 시스템 점검이 이번 주 최우선 액션 아이템입니다.",
+      integratedInsights: [
+        {
+          title: "수익성 관리",
+          icon: "fa-chart-line",
+          color: "blue",
+          content: "6월 전체 GP 22.5%는 연평균 수준(22.4%)과 일치합니다. 온라인 채널 비중(63.3%)이 증가할수록 단가 압박이 올 수 있어, 수동 고마진 딜 확보 전략을 병행해야 합니다. 4월 이후 GP 방어를 위한 공급처 단가 재협상 기회를 점검하세요."
+        },
+        {
+          title: "납기 리스크 관리",
+          icon: "fa-calendar-exclamation",
+          color: "yellow",
+          content: "중국 CN 납기(8.9일)는 정상이나, 4월 10.3일 위반 이력이 있습니다. 고층수·특수재질 SPEC에 대한 사전 재고 버퍼 운영과 국내 대체 공급처 발굴을 통해 납기 변동성을 낮춰야 합니다. KR 납기(5.5일)를 활용한 우선 배치 전략을 검토하세요."
+        },
+        {
+          title: "처리율 개선 액션",
+          icon: "fa-bolt-lightning",
+          color: "red",
+          content: "견적·오더 처리율 모두 목표(95%) 미달입니다. 단기: 지연 사유 코드 표준화 및 당일 알림 자동화 구축. 중기: 여신 한도 사전 점검 자동화·공급처 확인 API 연동. 이 두 지표가 개선되면 고객 신뢰도와 재구매율 향상으로 이어집니다."
+        }
+      ]
+    };
+
+    /* ── utils ── */
+    const money = v => new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 0 }).format(v);
+    const pct = (v, d = 1) => `${(v * 100).toFixed(d)}%`;
+    const sLabel = { blue: "파랑", yellow: "노랑", red: "빨강" };
+
+    /* clock */
+    function updateClock() {
+      document.getElementById("clock").textContent =
+        new Date().toLocaleString("ko-KR", { hour12: false });
+    }
+    setInterval(updateClock, 1000); updateClock();
+
+    /* Chart.js defaults */
+    Chart.defaults.color = "#111827";
+    Chart.defaults.font.family = "Inter, Noto Sans KR, sans-serif";
+
+    /* ── chart instances ── */
+    let billingChart, mixChart, leadTimeChart, fulfillmentChart;
+    let currentTab = "all";
+
+    function billingDatasets(tab) {
+      const rows = dashboard.monthlyBilling;
+      if (tab === "online") {
+        return [{ label: "온라인 매출", data: rows.map(r => r.online), backgroundColor: "rgba(56,189,248,.65)", borderRadius: 6 }];
+      } else if (tab === "manual") {
+        return [{ label: "수동 매출", data: rows.map(r => r.manual), backgroundColor: "rgba(249,115,22,.65)", borderRadius: 6 }];
+      }
+      return [
+        { label: "온라인 매출", data: rows.map(r => r.online), backgroundColor: "rgba(56,189,248,.65)", borderRadius: 6 },
+        { label: "수동 매출", data: rows.map(r => r.manual), backgroundColor: "rgba(249,115,22,.55)", borderRadius: 6 }
+      ];
+    }
+
+    window.switchChart = function(tab, btn) {
+      currentTab = tab;
+      document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      billingChart.data.datasets = billingDatasets(tab);
+      billingChart.update();
+    };
+
+    function renderCharts() {
+      const rows = dashboard.monthlyBilling;
+      const labels = rows.map(r => r.label.replace("2026-", ""));
+
+      billingChart = new Chart(document.getElementById("billingChart"), {
+        type: "bar",
+        data: { labels, datasets: billingDatasets("all") },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: { tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ₩${money(ctx.parsed.y)}` } } },
+          scales: {
+            y: { stacked: false, grid: { color: "rgba(15,23,42,.08)" }, ticks: { callback: v => `${Math.round(v/1000000)}M` } },
+            x: { grid: { display: false } }
+          }
+        }
+      });
+
+      const lastRow = rows[rows.length - 1];
+      mixChart = new Chart(document.getElementById("mixChart"), {
+        type: "doughnut",
+        data: {
+          labels: ["온라인", "수동"],
+          datasets: [{ data: [lastRow.online, lastRow.manual], backgroundColor: ["#38bdf8", "#f97316"], borderColor: "#fff", borderWidth: 3 }]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false, cutout: "62%",
+          plugins: { tooltip: { callbacks: { label: ctx => `${ctx.label}: ₩${money(ctx.parsed)}` } } }
+        }
+      });
+
+      const ltRows = dashboard.leadTimeHistory;
+      leadTimeChart = new Chart(document.getElementById("leadTimeChart"), {
+        type: "line",
+        data: {
+          labels: ltRows.map(r => r.label.replace("2026-", "")),
+          datasets: [
+            { label: "CN (중국)", data: ltRows.map(r => r.cn), borderColor: "#f97316", backgroundColor: "rgba(249,115,22,.12)", tension: 0.4, fill: true, pointRadius: 5 },
+            { label: "KR (국내)", data: ltRows.map(r => r.kr), borderColor: "#22c55e", backgroundColor: "rgba(34,197,94,.12)", tension: 0.4, fill: true, pointRadius: 5 }
+          ]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          scales: {
+            y: { grid: { color: "rgba(15,23,42,.08)" }, min: 0, suggestedMax: 14,
+                 ticks: { callback: v => `${v}일` } },
+            x: { grid: { display: false } }
+          },
+          plugins: {
+            annotation: { annotations: {
+              goal: { type: "line", yMin: 10, yMax: 10, borderColor: "#ef4444", borderWidth: 2, borderDash: [6,4],
+                      label: { content: "기준 10일", enabled: true, position: "end", color: "#ef4444", backgroundColor: "transparent" } }
+            }}
+          }
+        }
+      });
+
+      const fRows = dashboard.fulfillmentHistory;
+      fulfillmentChart = new Chart(document.getElementById("fulfillmentChart"), {
+        type: "line",
+        data: {
+          labels: fRows.map(r => r.label.replace("2026-", "")),
+          datasets: [
+            { label: "견적 처리율", data: fRows.map(r => r.quote * 100), borderColor: "#38bdf8", backgroundColor: "rgba(56,189,248,.1)", tension: 0.4, fill: true, pointRadius: 5 },
+            { label: "오더 처리율", data: fRows.map(r => r.order * 100), borderColor: "#22c55e", backgroundColor: "rgba(34,197,94,.1)", tension: 0.4, fill: true, pointRadius: 5 }
+          ]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          scales: {
+            y: { grid: { color: "rgba(15,23,42,.08)" }, min: 85, max: 100, ticks: { callback: v => `${v}%` } },
+            x: { grid: { display: false } }
+          }
+        }
+      });
+    }
+
+    function renderMenu() {
+      document.getElementById("menu").innerHTML = dashboard.metrics.map((m, i) => `
+        <button class="nav-item ${i === 0 ? "active" : ""}" data-target="${m.id}">
+          <i class="fa-solid ${m.icon} w-4 text-sky-300"></i>
+          <span class="text-sm">${m.title}</span>
+        </button>
+      `).join("");
+      document.querySelectorAll(".nav-item").forEach(btn => {
+        btn.addEventListener("click", () => {
+          document.querySelectorAll(".nav-item").forEach(x => x.classList.remove("active"));
+          btn.classList.add("active");
+          const el = document.getElementById(btn.dataset.target) ||
+                      document.getElementById("section-" + btn.dataset.target);
+          el?.scrollIntoView({ behavior: "smooth", block: "center" });
+        });
+      });
+    }
+
+    function renderCounts() {
+      const counts = dashboard.metrics.reduce((a, m) => { a[m.status] = (a[m.status] || 0) + 1; return a; }, {});
+      document.getElementById("okCount").textContent = counts.blue || 0;
+      document.getElementById("warnCount").textContent = counts.yellow || 0;
+      document.getElementById("badCount").textContent = counts.red || 0;
+
+      const worst = counts.red > 0 ? "red" : counts.yellow > 0 ? "yellow" : "blue";
+      const worstLabel = { red: "경고", yellow: "주의", blue: "정상" };
+      const worstClass = { red: "text-red-300", yellow: "text-yellow-200", blue: "text-sky-300" };
+      const el = document.getElementById("overallText");
+      el.textContent = worstLabel[worst];
+      el.className = worstClass[worst];
+
+      document.getElementById("overallInsight").textContent = dashboard.overallInsight;
+      document.getElementById("sidebarInsight").textContent = dashboard.overallInsight;
+
+      const rows = dashboard.monthlyBilling;
+      const total = rows.reduce((s, r) => s + r.total, 0);
+      const profit = rows.reduce((s, r) => s + r.total * r.gp, 0);
+      document.getElementById("selectedPeriodLabel").textContent =
+        `${rows[0].label} ~ ${rows[rows.length - 1].label}`;
+      document.getElementById("periodAmount").textContent = `₩${money(total)}`;
+      document.getElementById("periodGp").textContent = pct(profit / total);
+    }
+
+    function renderCards() {
+      document.getElementById("metricCards").innerHTML = dashboard.metrics.slice(0, 4).map(m => `
+        <article class="glass metric-card p-4" id="${m.id}">
+          <div class="status-bar status-${m.status} absolute left-0 right-0 top-0"></div>
+          <div class="relative z-10 flex h-full flex-col justify-between gap-4">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <div class="small-label">${m.title}</div>
+                <div class="mt-3 value">${m.display}</div>
+              </div>
+              <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white/5 text-sky-200">
+                <i class="fa-solid ${m.icon}"></i>
+              </div>
+            </div>
+            <div>
+              <div class="mb-2 flex items-center justify-between text-xs">
+                <span class="muted">Goal ${m.goal}</span>
+                <span class="traffic ${m.status}">${sLabel[m.status]}</span>
+              </div>
+              <div class="progress-track">
+                <div class="progress-fill" style="width:${
+                  m.value && m.value <= 1 ? Math.max(8, m.value * 100) :
+                  m.status === "blue" ? 100 : m.status === "yellow" ? 68 : 35
+                }%"></div>
+              </div>
+            </div>
+          </div>
+        </article>
+      `).join("");
+    }
+
+    function renderCriteriaTable() {
+      document.getElementById("criteriaRows").innerHTML = dashboard.metrics.map(m => `
+        <tr class="table-row align-top">
+          <td class="py-3 pr-4 font-semibold">${m.title}
+            <div class="mt-1 text-xs muted">${m.indicator} · ${m.update}</div>
+          </td>
+          <td class="py-3 pr-4 mono">${m.display}</td>
+          <td class="py-3 pr-4"><span class="traffic ${m.status}">${sLabel[m.status]}</span></td>
+          <td class="py-3 pr-4 text-xs">${m.goal}</td>
+          <td class="py-3 pr-4 text-xs leading-6 text-slate-300">
+            빨강: ${m.red}<br>노랑: ${m.yellow}<br>파랑: ${m.blue}
+          </td>
+          <td class="py-3 pr-4 text-xs">
+            ${m.source.startsWith("http")
+              ? `<a class="source-link" href="${m.source}" target="_blank">${m.sourceLabel}</a>`
+              : m.sourceLabel}
+          </td>
+        </tr>
+      `).join("");
+    }
+
+    function renderSystemCheck() {
+      const checks = dashboard.onlineSystemCheck;
+      const errCount = checks.filter(c => c.status === "err").length;
+      const pendCount = checks.filter(c => c.status === "pending").length;
+      const overallStatus = errCount > 0 ? "red" : pendCount > 0 ? "yellow" : "blue";
+      const overallLabel = { red: "오류 발생!", yellow: "점검 보류", blue: "문제없음" };
+      const badge = document.getElementById("checkOverallBadge");
+      badge.className = `traffic ${overallStatus}`;
+      badge.textContent = overallLabel[overallStatus];
+
+      document.getElementById("checkList").innerHTML = checks.map(c => `
+        <div class="check-item ${c.status}">
+          <div class="check-dot ${c.status}"></div>
+          <span class="text-sm font-medium">${c.spec}</span>
+          <span class="ml-auto text-xs mono ${
+            c.status === "ok" ? "text-green-600" :
+            c.status === "err" ? "text-red-600" : "text-yellow-600"
+          }">${c.status === "ok" ? "견적노출 정상" : c.status === "err" ? "오류 발생" : "점검 보류"}</span>
+        </div>
+      `).join("");
+    }
+
+    function renderInsights() {
+      document.getElementById("insightCards").innerHTML = dashboard.metrics.map(m => `
+        <article class="rounded-lg border border-white/10 bg-white/[.035] p-4">
+          <div class="mb-3 flex items-center justify-between gap-3">
+            <h4 class="font-bold"><i class="fa-solid ${m.icon} mr-2 text-sky-300"></i>${m.title}</h4>
+            <span class="traffic ${m.status}">${sLabel[m.status]}</span>
+          </div>
+          <p class="text-sm leading-7 text-slate-300">${m.insight}</p>
+        </article>
+      `).join("");
+    }
+
+    function renderIntegrated() {
+      const colorClass = { blue: "text-sky-400", yellow: "text-yellow-500", red: "text-red-400" };
+      const borderClass = { blue: "border-sky-200/40 bg-sky-50/20", yellow: "border-yellow-200/40 bg-yellow-50/20", red: "border-red-200/40 bg-red-50/20" };
+      document.getElementById("integratedInsights").innerHTML = dashboard.integratedInsights.map(ins => `
+        <div class="rounded-lg border ${borderClass[ins.color]} p-4">
+          <h4 class="mb-2 font-bold ${colorClass[ins.color]}">
+            <i class="fa-solid ${ins.icon} mr-2"></i>${ins.title}
+          </h4>
+          <p class="text-sm leading-6 text-slate-400">${ins.content}</p>
+        </div>
+      `).join("");
+    }
+
+    function renderDashboard() {
+      renderMenu();
+      renderCounts();
+      renderCards();
+      renderCriteriaTable();
+      renderSystemCheck();
+      renderInsights();
+      renderIntegrated();
+      renderCharts();
+    }
+
+    /* ── Tableau Auth (stub – real call needs backend) ── */
+    document.getElementById("periodApply").addEventListener("click", () => {
+      const user = document.getElementById("tableauUser").value.trim();
+      const pass = document.getElementById("tableauPassword").value;
+      if (user && pass) {
+        document.getElementById("overallInsight").textContent =
+          "Tableau 인증 정보가 입력되었습니다. 실시간 데이터 연동은 /api/dashboard 엔드포인트를 통해 처리됩니다. 현재는 내장 집계 데이터 기준으로 표시됩니다.";
+      }
+    });
+
+    document.getElementById("tableauConnect").addEventListener("click", () => {
+      const user = document.getElementById("tableauUser").value.trim();
+      const pass = document.getElementById("tableauPassword").value;
+      if (!user || !pass) {
+        alert("Tableau ID와 Password를 입력하세요.");
+        return;
+      }
+      document.getElementById("overallInsight").textContent =
+        `[${user}] Tableau 연결 시도 중... 실시간 연동은 서버 API를 통해 처리됩니다. 현재 데모 모드입니다.`;
+    });
+
+    renderDashboard();
+  </script>
+</body>
+</html>
